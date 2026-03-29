@@ -1,0 +1,106 @@
+name: Quicktest
+
+on:
+  push:
+    branches-ignore:
+      - stable
+  # Allow manually triggering the workflow.
+  workflow_dispatch:
+
+# Cancels all previous workflow runs for the same branch that have not yet completed.
+concurrency:
+  # The concurrency group contains the workflow name and the branch name.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  #### QUICK TEST STAGE ####
+  # Runs the tests against select PHP versions for pushes to arbitrary branches.
+  quicktest:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        php: ['5.6', '7.2', 'latest']
+
+    name: "Quick Test: PHP ${{ matrix.php }}"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install PHP
+        uses: shivammathur/setup-php@44454db4f0199b8b9685a5d763dc37cbf79108e1 # 2.36.0
+        with:
+          php-version: ${{ matrix.php }}
+          ini-values: zend.assertions=1, error_reporting=-1, display_errors=On, display_startup_errors=On, log_errors_max_len=0
+          coverage: none
+
+      # At least one test needs a non-en_US locale to be available, so make sure it is.
+      - name: Install locales
+        run: |
+          sudo apt-get update
+          sudo apt-get install locales-all
+
+      - name: Show available locales
+        run: locale -a
+
+      # Install dependencies and handle caching in one go.
+      # @link https://github.com/marketplace/actions/install-composer-dependencies
+      - name: Install Composer dependencies - normal
+        uses: "ramsey/composer-install@3cf229dc2919194e9e36783941438d17239e8520" # 3.1.1
+
+      - name: Setup Python
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: '3.14'
+
+      - name: Setup proxy server
+        run: pip3 install mitmproxy
+
+      - name: Check mitmproxy version
+        run: mitmdump --version
+
+      - name: Start test server
+        run: |
+          PORT=8080 vendor/bin/start.sh
+          echo "REQUESTS_TEST_HOST_HTTP=localhost:8080" >> "$GITHUB_ENV"
+
+      - name: Ping localhost domain
+        run: ping -c1 localhost
+
+      - name: Start proxy server
+        run: |
+          PORT=9002 scripts/proxy/start.sh
+          PORT=9003 AUTH="test:pass" scripts/proxy/start.sh
+          echo "REQUESTS_HTTP_PROXY=localhost:9002" >> "$GITHUB_ENV"
+          echo "REQUESTS_HTTP_PROXY_AUTH=localhost:9003" >> "$GITHUB_ENV"
+          echo "REQUESTS_HTTP_PROXY_AUTH_USER=test" >> "$GITHUB_ENV"
+          echo "REQUESTS_HTTP_PROXY_AUTH_PASS=pass" >> "$GITHUB_ENV"
+
+      - name: Ensure the HTTPS test instance on Render is spun up
+        run: curl -s -I https://requests-test-server.onrender.com/ > /dev/null
+
+      - name: Access localhost on port 8080
+        run: curl -i http://localhost:8080
+
+      - name: Access localhost on port 9002
+        run: curl -i http://localhost:9002
+
+      - name: Show PHPUnit version
+        run: vendor/bin/phpunit --version
+
+      - name: Run the unit tests
+        run: composer test
+
+      - name: Stop proxy server
+        continue-on-error: true
+        run: |
+          PORT=9002 scripts/proxy/stop.sh
+          PORT=9003 scripts/proxy/stop.sh
+
+      - name: Stop test server
+        continue-on-error: true
+        run: vendor/bin/stop.sh

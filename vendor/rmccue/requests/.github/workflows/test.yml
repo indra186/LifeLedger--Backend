@@ -1,0 +1,140 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - stable
+  pull_request:
+  # Allow manually triggering the workflow.
+  workflow_dispatch:
+
+# Cancels all previous workflow runs for the same branch that have not yet completed.
+concurrency:
+  # The concurrency group contains the workflow name and the branch name.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  #### TEST STAGE ####
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      # Keys:
+      # - coverage: Whether to run the tests with code coverage.
+      matrix:
+        php: ['7.0', '7.1', '7.2', '7.3', '7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.6']
+        coverage: [false]
+
+        include:
+          # Run code coverage on high/low PHP.
+          - php: '5.6'
+            coverage: true
+          - php: '8.5'
+            coverage: true
+
+    name: "Test: PHP ${{ matrix.php }}"
+    continue-on-error: ${{ matrix.php == '8.6' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install PHP
+        uses: shivammathur/setup-php@44454db4f0199b8b9685a5d763dc37cbf79108e1 # 2.36.0
+        with:
+          php-version: ${{ matrix.php }}
+          ini-values: zend.assertions=1, error_reporting=-1, display_errors=On, display_startup_errors=On, log_errors_max_len=0
+          coverage: ${{ matrix.coverage && 'xdebug' || 'none' }}
+          tools: cs2pr
+
+      # At least one test needs a non-en_US locale to be available, so make sure it is.
+      - name: Install locales
+        run: |
+          sudo apt-get update
+          sudo apt-get install locales-all
+
+      - name: Show available locales
+        run: locale -a
+
+      # Install dependencies and handle caching in one go.
+      # @link https://github.com/marketplace/actions/install-composer-dependencies
+      - name: Install Composer dependencies
+        uses: "ramsey/composer-install@3cf229dc2919194e9e36783941438d17239e8520" # 3.1.1
+        with:
+          # For PHP "nightly", we need to install with ignore platform reqs as not all dependencies may allow it yet.
+          composer-options: ${{ matrix.php == '8.6' && '--ignore-platform-req=php+' || '' }}
+          # Bust the cache at least once a month - output format: YYYY-MM.
+          custom-cache-suffix: $(date -u "+%Y-%m")
+
+      - name: Setup problem matcher to provide annotations for PHPUnit
+        run: echo "::add-matcher::${{ runner.tool_cache }}/phpunit.json"
+
+      - name: Setup Python
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: '3.14'
+
+      - name: Setup proxy server
+        run: pip3 install mitmproxy
+
+      - name: Check mitmproxy version
+        run: mitmdump --version
+
+      - name: Start test server
+        run: |
+          PORT=8080 vendor/bin/start.sh
+          echo "REQUESTS_TEST_HOST_HTTP=localhost:8080" >> "$GITHUB_ENV"
+
+      - name: Ping localhost domain
+        run: ping -c1 localhost
+
+      - name: Start proxy server
+        run: |
+          PORT=9002 scripts/proxy/start.sh
+          PORT=9003 AUTH="test:pass" scripts/proxy/start.sh
+          echo "REQUESTS_HTTP_PROXY=localhost:9002" >> "$GITHUB_ENV"
+          echo "REQUESTS_HTTP_PROXY_AUTH=localhost:9003" >> "$GITHUB_ENV"
+          echo "REQUESTS_HTTP_PROXY_AUTH_USER=test" >> "$GITHUB_ENV"
+          echo "REQUESTS_HTTP_PROXY_AUTH_PASS=pass" >> "$GITHUB_ENV"
+
+      - name: Ensure the HTTPS test instance on Render is spun up
+        run: curl -s -I https://requests-test-server.onrender.com/ > /dev/null
+
+      - name: Access localhost on port 8080
+        run: curl -i http://localhost:8080
+
+      - name: Access localhost on port 9002
+        run: curl -i http://localhost:9002
+
+      - name: Show PHPUnit version
+        run: vendor/bin/phpunit --version
+
+      - name: Run the unit tests, no code coverage
+        if: ${{ matrix.coverage == false }}
+        run: composer test
+
+      - name: Run the unit tests with code coverage
+        if: ${{ matrix.coverage == true }}
+        run: vendor/bin/phpunit --coverage-clover clover.xml
+
+      - name: Stop proxy server
+        continue-on-error: true
+        run: |
+          PORT=9002 scripts/proxy/stop.sh
+          PORT=9003 scripts/proxy/stop.sh
+
+      - name: Stop test server
+        continue-on-error: true
+        run: vendor/bin/stop.sh
+
+      - name: Send coverage report to Codecov
+        if: ${{ success() && matrix.coverage == true && github.event.repository.fork == false }}
+        uses: codecov/codecov-action@5a1091511ad55cbe89839c7260b706298ca349f7 # v5.5.1
+        with:
+          token: "${{ secrets.CODECOV_TOKEN }}"
+          files: ./clover.xml
+          fail_ci_if_error: true
+          verbose: true

@@ -1,0 +1,29 @@
+name: Certificates
+
+on:
+  # Run on every push to `stable` and `develop`.
+  # Not using path selection here as it appears only the files in the last commit from the push are looked at.
+  push:
+    branches:
+      - 'stable'
+      - 'develop'
+  # And whenever this workflow is updated or a PR attempts to update the certificate files.
+  pull_request:
+    paths:
+      - '.github/workflows/update-cacert.yml'
+      - '.github/workflows/update-cacert-cron.yml'
+      - '.github/workflows/reusable-update-cacert.yml'
+      - 'certificates/cacert.pem'
+      - 'certificates/cacert.pem.sha256'
+  # Also allow manually triggering the workflow.
+  workflow_dispatch:
+
+# Cancels all previous workflow runs for the same branch that have not yet completed.
+concurrency:
+  # The concurrency group contains the workflow name and the branch name.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  certificate-check:
+    uses: ./.github/workflows/reusable-update-cacert.yml
