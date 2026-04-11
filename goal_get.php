@@ -14,7 +14,7 @@ if ($goal_id <= 0) {
 }
 
 $stmt = $conn->prepare(
-    "SELECT id, title, target_amount, target_date
+    "SELECT id, title, target_amount,current_amount, target_date
      FROM goals
      WHERE id = ? AND user_id = ? LIMIT 1"
 );

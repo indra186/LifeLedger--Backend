@@ -13,16 +13,17 @@ $input = get_json_input();
 $title  = trim($input['title'] ?? '');
 $target = isset($input['target_amount']) ? (float)$input['target_amount'] : 0;
 $date   = $input['target_date'] ?? null;
+$currentamount=isset($input['current_amount']) ? (float)$input['current_amount'] : 0;
 
 if ($title === '' || $target <= 0) {
     respond(false, 'title and target_amount required', null, 400);
 }
 
 $stmt = $conn->prepare(
-    "INSERT INTO goals (user_id, title, target_amount, target_date)
-     VALUES (?, ?, ?, ?)"
+    "INSERT INTO goals (user_id, title, target_amount, current_amount, target_date)
+     VALUES (?, ?, ?, ?,?)"
 );
-$stmt->bind_param('isds', $user['id'], $title, $target, $date);
+$stmt->bind_param('isdds',$user['id'], $title, $target, $currentamount ,$date);
 $stmt->execute();
 
 respond(true, 'goal created', [

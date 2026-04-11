@@ -9,7 +9,7 @@ if (!$user) {
 }
 
 $stmt = $conn->prepare(
-    "SELECT id, title, target_amount, target_date
+    "SELECT id, title, target_amount,current_amount, target_date
      FROM goals
      WHERE user_id = ?
      ORDER BY created_at DESC"

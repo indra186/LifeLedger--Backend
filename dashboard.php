@@ -40,7 +40,13 @@ while($h = $hres->fetch_assoc()) $habits[] = $h;
 
 // goals progress summary
 $goals = [];
-$gStmt = $conn->prepare("SELECT id, title, target_amount, current_amount FROM goals WHERE user_id = ?");
+$gStmt = $conn->prepare("
+    SELECT id, title, target_amount, current_amount 
+    FROM goals 
+    WHERE user_id = ? 
+    ORDER BY created_at DESC 
+    LIMIT 2
+");
 $gStmt->bind_param('i', $user['id']);
 $gStmt->execute();
 $gres = $gStmt->get_result();
