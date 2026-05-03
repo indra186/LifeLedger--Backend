@@ -17,32 +17,66 @@ if ($goal_id <= 0 || $amount <= 0) {
     respond(false, 'invalid input', null, 400);
 }
 
-// 1. Check account balance
+// 1. Get account balance
 $stmt = $conn->prepare("SELECT balance FROM accounts WHERE id = ? AND user_id = ?");
 $stmt->bind_param('ii', $account_id, $user['id']);
 $stmt->execute();
-$res = $stmt->get_result()->fetch_assoc();
+$acc = $stmt->get_result()->fetch_assoc();
 
-if (!$res || $res['balance'] < $amount) {
+if (!$acc || $acc['balance'] < $amount) {
     respond(false, 'insufficient balance', null, 400);
 }
 
-// 2. Deduct from account
+// 2. Get goal details (IMPORTANT ADDITION)
+$stmt = $conn->prepare("SELECT current_amount, target_amount FROM goals WHERE id = ?");
+$stmt->bind_param('i', $goal_id);
+$stmt->execute();
+$goal = $stmt->get_result()->fetch_assoc();
+
+if (!$goal) {
+    respond(false, 'goal not found', null, 404);
+}
+
+$current = (float)$goal['current_amount'];
+$target  = (float)$goal['target_amount'];
+
+$remaining = $target - $current;
+
+// 3. Decide how much to use
+if ($remaining <= 0) {
+    respond(false, 'goal already completed', null, 400);
+}
+
+if ($amount > $remaining) {
+    $used = $remaining;
+    $extra = $amount - $remaining;
+} else {
+    $used = $amount;
+    $extra = 0;
+}
+
+//  4. Deduct ONLY used amount from account
 $stmt = $conn->prepare("UPDATE accounts SET balance = balance - ? WHERE id = ?");
-$stmt->bind_param('di', $amount, $account_id);
+$stmt->bind_param('di', $used, $account_id);
 $stmt->execute();
 
-// 3. Add to goal
+// NOTE: extra is NOT deducted at all → stays in account
+
+// 5. Add ONLY used amount to goal
 $stmt = $conn->prepare("UPDATE goals SET current_amount = current_amount + ? WHERE id = ?");
-$stmt->bind_param('di', $amount, $goal_id);
+$stmt->bind_param('di', $used, $goal_id);
 $stmt->execute();
 
-// 4. Insert history
+// 6. Insert history ONLY used amount
 $stmt = $conn->prepare(
     "INSERT INTO goal_progress (goal_id, user_id, amount_added, date_added)
      VALUES (?, ?, ?, NOW())"
 );
-$stmt->bind_param('iid', $goal_id, $user['id'], $amount);
+$stmt->bind_param('iid', $goal_id, $user['id'], $used);
 $stmt->execute();
 
-respond(true, 'amount added to goal');
+// 7. Response
+respond(true, 'amount added to goal', [
+    'used_amount' => $used,
+    'extra_amount' => $extra
+]);
