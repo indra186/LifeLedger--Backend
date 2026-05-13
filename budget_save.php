@@ -9,8 +9,7 @@ $input = get_json_input();
 
 $category = trim($input['category'] ?? '');
 $limit    = isset($input['limit_amount']) ? (float)$input['limit_amount'] : 0;
-$alert    = isset($input['alert_threshold']) ? (int)$input['alert_threshold'] : 80;
-$period   = $input['period'] ?? 'monthly';
+$alert = !empty($input['alert_enabled']) ? 80 : 0;
 $id       = isset($input['id']) ? (int)$input['id'] : 0;
 
 if ($category === '' || $limit <= 0) {
@@ -20,10 +19,10 @@ if ($category === '' || $limit <= 0) {
 if ($id > 0) {
     $stmt = $conn->prepare("
         UPDATE budgets 
-        SET category = ?, limit_amount = ?, alert_threshold = ?, period = ?
+        SET category = ?, limit_amount = ?, alert_threshold = ?
         WHERE id = ? AND user_id = ?
     ");
-    $stmt->bind_param("sdisii", $category, $limit, $alert, $period, $id, $user['id']);
+    $stmt->bind_param("sdiii", $category, $limit, $alert, $id, $user['id']);
     $stmt->execute();
 
     if ($stmt->affected_rows > 0) {
@@ -33,11 +32,30 @@ if ($id > 0) {
     }
 }
 else {
+    $month = isset($input['month']) ? (int)$input['month'] : 0;
+    $year  = isset($input['year']) ? (int)$input['year'] : 0;
+
     $stmt = $conn->prepare("
-        INSERT INTO budgets (user_id, category, limit_amount, alert_threshold, period)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO budgets (
+            user_id,
+            category,
+            limit_amount,
+            alert_threshold,
+            month,
+            year
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
     ");
-    $stmt->bind_param("isdss", $user['id'], $category, $limit, $alert, $period);
+
+    $stmt->bind_param(
+        "isdiii",
+        $user['id'],
+        $category,
+        $limit,
+        $alert,
+        $month,
+        $year
+    );
 
     if ($stmt->execute()) {
         respond(true, "budget created", ["id" => $conn->insert_id], 201);
