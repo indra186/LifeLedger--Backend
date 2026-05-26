@@ -1,5 +1,6 @@
 <?php
 require_once 'helpers.php';
+$user = validate_token($conn);
 
 $conn = db_connect();
 
@@ -69,7 +70,7 @@ Surplus: {$finance['surplus']}
     $ch = curl_init();
 
     curl_setopt_array($ch, [
-        CURLOPT_URL => "http://192.168.2.100:11434/api/generate",
+        CURLOPT_URL => "http://192.168.29.2:11434/api/generate",
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST => true,
         CURLOPT_TIMEOUT => 60,

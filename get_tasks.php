@@ -1,39 +1,69 @@
 <?php
+
 require_once 'helpers.php';
 
 $conn = db_connect();
+
 $user = validate_token($conn);
 
-// 🔴 HANDLE UNAUTHORIZED PROPERLY
-if (!$user) {
-    respond(false, 'unauthorized', null, 401);
-}
+$today = date("Y-m-d");
 
-$goal_id = isset($_GET['goal_id']) ? (int)$_GET['goal_id'] : 0;
+$tasksQuery = $conn->prepare("
 
-if ($goal_id <= 0) {
-    respond(false, 'invalid goal_id', null, 400);
-}
+SELECT
 
-$stmt = $conn->prepare("
-    SELECT goal_id, strategy, action, status, result, retry_count
-    FROM agent_tasks
-    WHERE user_id = ?
-    AND goal_id = ?
-    AND status IN ('PENDING','FAILED')
-    ORDER BY created_at DESC
-    LIMIT 10
+    t.id,
+    t.title,
+    t.description,
+    t.date,
+    t.time,
+    t.priority,
+    t.repeat_type,
+    t.repeat_days,
+    t.reminder_enabled,
+    t.attachment_uri,
+
+    COALESCE(
+        ti.completed,
+        0
+    ) AS completed
+
+FROM tasks t
+
+LEFT JOIN task_instances ti
+
+ON t.id = ti.task_id
+AND ti.instance_date = ?
+
+WHERE t.user_id = ?
+
+ORDER BY
+    t.date ASC,
+    t.time ASC
 ");
 
-$stmt->bind_param("ii", $user['id'], $goal_id);
-$stmt->execute();
+$tasksQuery->bind_param(
 
-$res = $stmt->get_result();
+    "si",
 
-$data = [];
+    $today,
 
-while ($row = $res->fetch_assoc()) {
-    $data[] = $row;
-}
+    $user['id']
+);
 
-respond(true, "tasks", $data);
+$tasksQuery->execute();
+
+$data =
+
+    $tasksQuery
+        ->get_result()
+        ->fetch_all(MYSQLI_ASSOC);
+
+respond(
+
+    true,
+
+    "Tasks fetched",
+
+    $data
+);

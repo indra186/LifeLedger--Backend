@@ -138,12 +138,43 @@ if($id > 0){
 
     if($stmt->execute()){
 
+                $newHabitId =
+            $conn->insert_id;
+
+        $habitStmt = $conn->prepare("
+            SELECT
+                id,
+                name,
+                description,
+                icon,
+                frequency,
+                selected_days,
+                goal_per_day,
+                goal_unit,
+                reminder_time,
+                0 AS completed_today,
+                0 AS streak
+            FROM habits
+            WHERE id = ?
+            LIMIT 1
+        ");
+
+        $habitStmt->bind_param(
+            'i',
+            $newHabitId
+        );
+
+        $habitStmt->execute();
+
+        $habit =
+            $habitStmt
+                ->get_result()
+                ->fetch_assoc();
+
         respond(
             true,
             'Habit created',
-            [
-                'id' => $conn->insert_id
-            ],
+            $habit,
             201
         );
 
