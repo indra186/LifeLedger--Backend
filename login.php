@@ -13,7 +13,7 @@ if ($email === '' || $password === '') {
 }
 
 $stmt = $conn->prepare(
-    "SELECT id, password_hash FROM users 
+    "SELECT id, name, email, password_hash FROM users 
 WHERE email = ? AND email_verified = 1
 LIMIT 1
 "
@@ -42,7 +42,11 @@ $update = $conn->prepare(
 $update->bind_param('si', $token, $user['id']);
 $update->execute();
 
+
 respond(true, 'Login successful', [
-    'user_id'    => $user['id'],
+
+    'user_id' => $user['id'],
+    'name' => $user['name'],
+    'email' => $user['email'],
     'auth_token' => $token
 ]);
